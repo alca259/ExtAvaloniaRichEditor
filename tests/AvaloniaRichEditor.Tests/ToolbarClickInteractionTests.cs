@@ -55,6 +55,45 @@ public class ToolbarClickInteractionTests : IDisposable
         Assert.Same(host.Editor, host.FocusedElement);
     }
 
+    // A host button in TrailingItems (the slot an app puts its own commands in) behaves like a built-in one.
+    [AvaloniaFact]
+    public void ClickingATrailingHostButtonLeavesFocusInTheEditor()
+    {
+        var (host, toolbar) = Setup();
+        bool clicked = false;
+        var mine = new Button { Content = "mine" };
+        mine.Click += (_, _) => clicked = true;
+        toolbar.TrailingItems.Add(mine);
+        host.Pump();
+
+        host.ClickControl(mine);
+        host.Type("X");
+
+        Assert.True(clicked);
+        Assert.Same(host.Editor, host.FocusedElement);
+        Assert.Equal("Xabc", ((Paragraph)host.Editor.Document!.Blocks[0]).Text());
+    }
+
+    // The text-colour picker's "Automatic (default)" clears the run's colour, so it follows DefaultForeground
+    // (a dark-theme host's light brush) instead of being stamped black — as in the WinUI port.
+    [AvaloniaFact]
+    public void TheTextColourPickersAutomaticButtonClearsTheColour()
+    {
+        var (host, toolbar) = Setup("<p><span style=\"color:#FF0000\">abc</span></p>");
+        host.Key(Avalonia.Input.Key.A, Avalonia.Input.RawInputModifiers.Control);
+        var colourBtn = Buttons(toolbar).First(b =>
+            ToolTip.GetTip(b) is string t && t == RichEditorLocalization.GetString("TextColor"));
+        var panel = (Panel)((Flyout)colourBtn.Flyout!).Content!;
+        var auto = panel.Children.OfType<Button>().Single(b =>
+            Equals(b.Content, RichEditorLocalization.GetString("AutoColor")));
+
+        auto.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+
+        var runs = ((Paragraph)host.Editor.Document!.Blocks[0]).Inlines.OfType<Run>().ToList();
+        Assert.NotEmpty(runs);
+        Assert.All(runs, r => Assert.Null(r.Foreground));
+    }
+
     // The consequence the user actually saw: typing stopped going into the document.
     [AvaloniaFact]
     public void TypingStillReachesTheDocumentAfterAToolbarClick()

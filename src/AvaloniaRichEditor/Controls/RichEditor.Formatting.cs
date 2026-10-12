@@ -165,8 +165,10 @@ public partial class RichEditor
         }
         SetFontSize(target);
     }
-    /// <summary>Sets the foreground brush of the current selection (or the caret run).</summary>
-    public void SetForeground(IBrush brush) { ApplyStyleToSelection(r => r.Foreground = brush); }
+    /// <summary>Sets the foreground brush of the current selection (or the caret run); pass <see langword="null"/>
+    /// to clear back to the automatic default (<see cref="DefaultForeground"/> — matters for dark-theme hosts, where a
+    /// stamped explicit black would vanish against the background).</summary>
+    public void SetForeground(IBrush? brush) { ApplyStyleToSelection(r => r.Foreground = brush); }
     /// <summary>Sets the font family of the current selection (or the caret run).</summary>
     public void SetFontFamily(string family) { ApplyStyleToSelection(r => r.FontFamily = family); }
     /// <summary>Sets the highlight (background) brush of the current selection; pass <see langword="null"/> to clear.</summary>
@@ -513,7 +515,7 @@ public partial class RichEditor
             r.FontWeight = level > 0 ? FontWeight.Bold : FontWeight.Normal;
             r.FontStyle = FontStyle.Normal;
             r.FontSize = level > 0 ? HeadingStyle.Size(level) : DefaultFontSize;
-            r.Foreground = Brushes.Black;
+            r.Foreground = null; // DefaultForeground, so a cleared run follows the host theme
             r.Background = null;
             r.FontFamily = null;
             r.TextDecorations = null;

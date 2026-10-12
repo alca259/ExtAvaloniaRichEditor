@@ -43,7 +43,29 @@ public partial class RenderPixelTests
         var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
         try { rtb.CopyPixels(new PixelRect(0, 0, w, h), handle.AddrOfPinnedObject(), buf.Length, stride); }
         finally { handle.Free(); }
+        // The bitmap is in the platform's native order: BGRA on Windows, RGBA on macOS (measured in CI — a red
+        // bullet read back as blue). Px reads BGRA, so swap where a calibration pixel says the order is RGBA.
+        if (CopiesRgba())
+            for (int i = 0; i < buf.Length; i += 4) (buf[i], buf[i + 2]) = (buf[i + 2], buf[i]);
         return buf;
+    }
+
+    private static bool? _copiesRgba;
+
+    // Renders one pure-red pixel and looks at which byte the red lands in.
+    private static bool CopiesRgba()
+    {
+        if (_copiesRgba is { } known) return known;
+        var probe = new Avalonia.Controls.Border { Width = 1, Height = 1, Background = Brushes.Red };
+        probe.Measure(new Size(1, 1));
+        probe.Arrange(new Rect(0, 0, 1, 1));
+        var rtb = new RenderTargetBitmap(new PixelSize(1, 1));
+        rtb.Render(probe);
+        var px = new byte[4];
+        var handle = GCHandle.Alloc(px, GCHandleType.Pinned);
+        try { rtb.CopyPixels(new PixelRect(0, 0, 1, 1), handle.AddrOfPinnedObject(), 4, 4); }
+        finally { handle.Free(); }
+        return (_copiesRgba = px[0] > px[2]).Value;
     }
 
     private static (byte b, byte g, byte r, byte a) Px(byte[] bgra, int w, int x, int y)
@@ -315,5 +337,63 @@ public partial class RenderPixelTests
 
         Assert.True(colTwo > colOne,
             $"the second (non-current) match should still be tinted, got {colTwo} vs {colOne}");
+    }
+
+    // DefaultForeground: unstyled text and its list marker are drawn in the host's brush, not black, while
+    // a run with its own colour keeps it. A dark-theme host otherwise got black text on a dark page.
+    // (Contributed by olivierjc/AvaloniaRichEditor.)
+    [AvaloniaFact]
+    public void DefaultForeground_PaintsUnstyledTextAndMarkers_ButNotExplicitColours()
+    {
+        // Colour by channel dominance, not exact values: glyph edges are antialiased (subpixel on Windows,
+        // greyscale on macOS), so few pixels are pure red even where the brush is.
+        static bool Reddish(byte b, byte g, byte r, byte a) => a > 60 && r > g + 60 && r > b + 60;
+        static bool Bluish(byte b, byte g, byte r, byte a) => a > 60 && b > r + 60 && b > g + 60;
+        static int Count(byte[] px, int w, int x0, int x1, int y0, int y1, Func<byte, byte, byte, byte, bool> hit)
+        {
+            int n = 0;
+            for (int y = y0; y < y1; y++)
+                for (int x = x0; x < x1; x++)
+                {
+                    var (b, g, r, a) = Px(px, w, x, y);
+                    if (hit(b, g, r, a)) n++;
+                }
+            return n;
+        }
+
+        var ed = MakeEditor("<ul><li>Plain</li></ul><p><span style=\"color:#0000FF\">Blue</span></p>");
+        ed.DefaultForeground = Brushes.Red;
+        const int w = 400, h = 60;
+        var px = Render(ed, w, h);
+
+        // Line 1 is the list item; its first run of ink columns is the bullet (font metrics differ per
+        // platform, so find it rather than assume where it is). Line 2 is the blue run.
+        bool InkRow(int y) { for (int x = 0; x < w; x++) if (IsInk(px, w, x, y)) return true; return false; }
+        int split = 0; while (split < h && !InkRow(split)) split++;
+        while (split < h && InkRow(split)) split++; // first blank row after line 1
+        bool InkCol(int x) { for (int y = 0; y < split; y++) if (IsInk(px, w, x, y)) return true; return false; }
+        int bx0 = 0; while (bx0 < w && !InkCol(bx0)) bx0++;
+        int bx1 = bx0; while (bx1 < w && InkCol(bx1)) bx1++;
+        string diag = $"line 1 ends at y {split}, bullet cols {bx0}..{bx1}, ink {InkCount(px, w, h)}";
+
+        Assert.True(bx1 < w, "no ink on the list line — " + diag);
+        // The bullet is small, so its colour is read against the same render in the default black rather than
+        // by threshold: with the brush it has to carry clearly more red than green.
+        var black = Render(MakeEditor("<ul><li>Plain</li></ul><p><span style=\"color:#0000FF\">Blue</span></p>"), w, h);
+        long redGain = 0, green = 0;
+        var samples = new System.Text.StringBuilder();
+        for (int y = 0; y < split; y++)
+            for (int x = bx0; x < bx1; x++)
+            {
+                var (b, g, r, a) = Px(px, w, x, y);
+                var (_, _, r0, _) = Px(black, w, x, y);
+                redGain += r - r0; green += g;
+                if (a > 40 && samples.Length < 200) samples.Append($"({x},{y}) bgra {b},{g},{r},{a}; ");
+            }
+        Assert.True(redGain > 100 && redGain > 2 * green,
+            $"the bullet should be drawn in DefaultForeground — {diag}, red gain {redGain}, green {green}, {samples}");
+        Assert.True(Count(px, w, bx1, w, 0, split, Reddish) > 20, "unstyled text should be drawn in DefaultForeground — " + diag);
+        Assert.True(Count(px, w, 0, w, split, h, Bluish) > 20, "a run's own colour should still win — " + diag);
+        Assert.Equal(0, Count(px, w, 0, w, split, h, Reddish));
     }
 }
