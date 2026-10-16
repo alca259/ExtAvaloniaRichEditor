@@ -48,6 +48,12 @@ PR #48·#49·#50), 실기 후속도 PR #52로 들어왔다. 남은 것은 게시
 게시 절차: `<Version>` → Unshipped를 Shipped로 이관 → CHANGELOG `[Unreleased]` → 버전 → README 배지(en/ko) → PR로 3-OS CI →
 `v1.3.0` 태그 push(**사람이 실행**, Trusted Publishing) → **nuget.org 패키지 페이지 육안 확인**.
 
+**1e. 보기 모드 (2026-10-17)** — `RichEditor.ViewMode`(기본 `Continuous`): 맨 컨트롤은 어떤 문서든 연속으로 그리고, 쪽은
+`ViewMode = Page`에서만(`RichEditorView`는 `Page`로 연다). 용지 설정은 문서 것으로 보존·저장·인쇄. 툴바의 용지·방향·여백 칸은
+쪽 보기일 때만. ⚠ 맨 컨트롤에 `PageSize`로 쪽을 보이던 호스트는 `ViewMode = Page`를 더한다. 사용자 결정(10-17): 1.3에 넣음
+(1.3 뒤에는 신고만 받는다는 규칙의 예외). "열린 문서와 같은 값의 호스트 쪽 설정을 기록 못 함" 빈틈은 넣지 않았다(별개 결함, 미측정).
+WinUI 1.x는 별도로 정한다.
+
 **1d. 호스트가 문서를 직접 고치는 경로 (2026-10-17)** — 외부 평가가 짚은 "모델 불변식이 컨트롤 편집 경로에만 있다"를
 측정했다. 모델은 변경 알림이 없다(`Paragraph.Inlines`·`TableCell.Blocks`는 `List`, `Run.Text`는 자동 속성, 지워진 요소의
 `Parent`도 그대로). 호스트가 직접 고치면: 캐럿 문단 제거 후 타이핑이 **사라짐**, 추가한 문단에서 Enter가 줄바꿈(부모 미연결),
